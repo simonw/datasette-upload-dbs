@@ -14,7 +14,7 @@ def get_long_description():
 
 setup(
     name="datasette-upload-dbs",
-    description="Upload new SQLite database files directly to Datasette",
+    description="Upload SQLite database files to Datasette",
     long_description=get_long_description(),
     long_description_content_type="text/markdown",
     author="Simon Willison",

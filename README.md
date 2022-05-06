@@ -5,7 +5,7 @@
 [![Tests](https://github.com/simonw/datasette-upload-dbs/workflows/Test/badge.svg)](https://github.com/simonw/datasette-upload-dbs/actions?query=workflow%3ATest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/datasette-upload-dbs/blob/main/LICENSE)
 
-Upload new SQLite database files directly to Datasette
+Upload SQLite database files to Datasette
 
 ## Installation
 
