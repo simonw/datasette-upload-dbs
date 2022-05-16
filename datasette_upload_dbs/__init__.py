@@ -24,7 +24,9 @@ def register_routes():
 @hookimpl
 def menu_links(datasette, actor):
     async def inner():
-        if await datasette.permission_allowed(actor, "upload-dbs", default=False):
+        if await datasette.permission_allowed(
+            actor, "upload-dbs", default=False
+        ) and _configured(datasette):
             return [
                 {
                     "href": datasette.urls.path("/-/upload-dbs"),
@@ -35,11 +37,36 @@ def menu_links(datasette, actor):
     return inner
 
 
+@hookimpl
+def startup(datasette):
+    # Load any databases located in the directory folder
+    directory = _configured(datasette)
+    if not directory:
+        return
+    path = pathlib.Path(directory)
+    database_files = path.glob("*.db")
+    for file_path in database_files:
+        datasette.add_database(
+            Database(datasette, path=str(file_path), is_mutable=True)
+        )
+
+
+def _configured(datasette):
+    return (datasette.plugin_config("datasette-upload-dbs") or {}).get("directory")
+
+
 async def upload_dbs(scope, receive, datasette, request):
     if not await datasette.permission_allowed(
         request.actor, "upload-dbs", default=False
     ):
         raise Forbidden("Permission denied for upload-dbs")
+
+    directory = _configured(datasette)
+
+    if not directory:
+        raise Forbidden("datasette-upload-dbs plugin has not been correctly configured")
+
+    path = pathlib.Path(directory)
 
     if request.method != "POST":
         return Response.html(
@@ -77,8 +104,12 @@ async def upload_dbs(scope, receive, datasette, request):
     if first_16 != b"SQLite format 3\x00":
         return await error("File is not a valid SQLite database (invalid header)")
 
+    # TODO: Ensure db_name has no / in it
+
+    path.mkdir(parents=True, exist_ok=True)
+
     # Copy it to its final destination
-    filepath = pathlib.Path(".") / (db_name + ".db")
+    filepath = path / (db_name + ".db")
     with open(filepath, "wb+") as target_file:
         db_file.file.seek(0)
         copyfileobj(db_file.file, target_file)
