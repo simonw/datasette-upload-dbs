@@ -1,6 +1,7 @@
 from datasette import hookimpl
 from datasette.database import Database
 from datasette.utils.asgi import Response, Forbidden
+from datasette.utils import to_css_class
 from datasette.utils.sqlite import sqlite3
 from starlette.requests import Request
 from shutil import copyfileobj
@@ -98,11 +99,11 @@ async def upload_dbs(scope, receive, datasette, request):
     if not db_name:
         db_name = db_file.filename.split(".")[0]
 
+    db_name = to_css_class(db_name) or "db"
+
     first_16 = db_file.file.read(16)
     if first_16 != b"SQLite format 3\x00":
         return await error("File is not a valid SQLite database (invalid header)")
-
-    # TODO: Ensure db_name has no / in it
 
     path.mkdir(parents=True, exist_ok=True)
 
