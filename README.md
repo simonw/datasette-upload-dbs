@@ -13,9 +13,52 @@ Install this plugin in the same environment as Datasette.
 
     datasette install datasette-upload-dbs
 
+## Configuration
+
+This plugin requires you to configure a directory in which uploaded files will be stored.
+
+On startup, Datasette will automatically load any SQLite files that it finds in that directory. This means it is safe to restart your server in between file uploads.
+
+To configure the directory as `/home/datasette/uploads`, add this to a `metadata.yml` configuration file:
+
+```yaml
+plugins:
+  datasette-upload-dbs:
+    directory: /home/datasette/uploads
+```
+
+Or if you are using `metadata.json`:
+
+```json
+{
+  "plugins": {
+    "datasette-upload-dbs": {
+      "directory": "/home/datasette/uploads"
+    }
+  }
+}
+```
+You can use `"."` for the current folder when the server starts, or `"uploads"` for a folder relative to that folder. The folder will be created on startup if it does not already exist.
+
+Then start Datasette like this:
+
+    datasette -m metadata.yml
+
 ## Usage
 
-Usage instructions go here.
+Only users with the `upload-dbs` permission will be able to upload files. The `root` user has this permission by default - other users can be granted access using permission plugins, see the [Permissions](https://docs.datasette.io/en/stable/authentication.html#permissions) documentation for details.
+
+To start Datasette as the root user, run this:
+
+    datasette -m metadata.yml --root
+
+And follow the link that is displayd on the console.
+
+If a user has that permission they will see an "Upload database" link in the navigation menu.
+
+This will take them to `/-/upload-dbs` where they will be able to upload database files, by selecting them or by dragging them onto the drop area.
+
+![Animated demo showing a file being dropped onto a box, then uploading and redirecting to the database page](upload-demo.gif)
 
 ## Development
 
