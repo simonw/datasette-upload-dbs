@@ -1,14 +1,6 @@
 from datasette.app import Datasette
+import sqlite3
 import pytest
-
-
-@pytest.mark.asyncio
-async def test_plugin_is_installed():
-    datasette = Datasette([], memory=True)
-    response = await datasette.client.get("/-/plugins.json")
-    assert response.status_code == 200
-    installed_plugins = {p["name"] for p in response.json()}
-    assert "datasette-upload-dbs" in installed_plugins
 
 
 @pytest.mark.asyncio
@@ -34,3 +26,19 @@ async def test_redirect():
     response = await ds.client.get("/-/upload-db")
     assert response.status_code == 302
     assert response.headers["location"] == "/-/upload-dbs"
+
+
+@pytest.mark.asyncio
+async def test_databases_loaded_on_startup(tmp_path_factory):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    for name in ("test1.db", "test2.db"):
+        db_path = uploads_directory / name
+        sqlite3.connect(str(db_path)).execute("create table t (id integer primary key)")
+    ds = Datasette(
+        memory=True,
+        metadata={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    await ds.invoke_startup()
+    assert set(ds.databases.keys()).issuperset({"test1", "test2"})
