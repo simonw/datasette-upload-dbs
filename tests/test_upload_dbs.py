@@ -42,3 +42,29 @@ async def test_databases_loaded_on_startup(tmp_path_factory):
     )
     await ds.invoke_startup()
     assert set(ds.databases.keys()).issuperset({"test1", "test2"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "authed,configured,expected_error",
+    (
+        (False, False, "Permission denied for upload-dbs"),
+        (False, True, "Permission denied for upload-dbs"),
+        (True, False, "datasette-upload-dbs plugin has not been correctly configured"),
+    ),
+)
+async def test_errors(authed, configured, expected_error):
+    ds = Datasette(
+        memory=True,
+        metadata={
+            "plugins": {"datasette-upload-dbs": {"directory": "."}}
+            if configured
+            else {}
+        },
+    )
+    cookies = {}
+    if authed:
+        cookies = {"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")}
+    response = await ds.client.get("/-/upload-dbs", cookies=cookies)
+    assert response.status_code == 403
+    assert expected_error in response.text
