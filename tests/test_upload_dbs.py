@@ -91,13 +91,7 @@ async def test_invalid_files(tmp_path_factory, bytes, expected_error, xhr):
             "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
         },
     )
-    # Get csrftoken
-    csrftoken = (
-        await ds.client.get(
-            "/-/upload-dbs",
-            cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
-        )
-    ).cookies["ds_csrftoken"]
+    csrftoken = await _get_csrftoken(ds)
     # write to database
     response = await ds.client.post(
         "/-/upload-dbs",
@@ -112,3 +106,68 @@ async def test_invalid_files(tmp_path_factory, bytes, expected_error, xhr):
         assert response.json() == {"ok": False, "error": expected_error}
     else:
         assert f'<p class="message-error">{expected_error}</p>' in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("xhr", (True, False))
+@pytest.mark.parametrize(
+    "db_file_name,db_name,expected_path",
+    (
+        ("temp.db", None, "/temp"),
+        (".db", None, "/d41d8c"),
+        ("temp.db", "custom", "/custom"),
+        ("temp.db", "a + b + c ~ d", "/a--b--c--d-26e27e"),
+    ),
+)
+async def test_upload(tmp_path_factory, xhr, db_file_name, db_name, expected_path):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        metadata={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    csrftoken = await _get_csrftoken(ds)
+
+    temp = str(tmp_directory / db_file_name)
+    sqlite3.connect(temp).execute("create table t (id integer primary key)")
+
+    upload_data = {"csrftoken": csrftoken, "xhr": "1" if xhr else ""}
+    if db_name:
+        upload_data["db_name"] = db_name
+
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies={
+            "ds_actor": ds.sign({"a": {"id": "root"}}, "actor"),
+            "ds_csrftoken": csrftoken,
+        },
+        data=upload_data,
+        files={"db": open(temp, "rb")},
+    )
+    if xhr:
+        assert response.json() == {"ok": True, "redirect": expected_path}
+    else:
+        assert response.status_code == 302
+        assert response.headers["location"] == expected_path
+
+    # Datasette should serve that file
+    table_response = await ds.client.get(f"{expected_path}/t.json?_shape=array")
+    assert table_response.status_code == 200
+    assert table_response.json() == []
+
+    # Uploaded file should exist
+    conn = sqlite3.connect(temp)
+    assert conn.execute("select sql from sqlite_master").fetchall() == [
+        ("CREATE TABLE t (id integer primary key)",)
+    ]
+
+
+async def _get_csrftoken(ds):
+    return (
+        await ds.client.get(
+            "/-/upload-dbs",
+            cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        )
+    ).cookies["ds_csrftoken"]
