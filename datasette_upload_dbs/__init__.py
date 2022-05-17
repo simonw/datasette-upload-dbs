@@ -77,15 +77,13 @@ async def upload_dbs(scope, receive, datasette, request):
 
     async def error(msg):
         if is_xhr:
-            return Response.json(
-                {"ok": False, "error": "File is not a valid SQLite database"}
-            )
+            return Response.json({"ok": False, "error": msg})
 
         return Response.html(
             await datasette.render_template(
                 "upload_dbs.html",
                 {
-                    "error": "File is not a valid SQLite database",
+                    "error": msg,
                 },
                 request=request,
             )

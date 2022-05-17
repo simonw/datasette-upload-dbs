@@ -47,6 +47,10 @@ progress::-webkit-progress-value {
 {% block content %}
 <h1>Upload a database</h1>
 
+{% if error %}
+  <p class="message-error">{{ error }}</p>
+{% endif %}
+
 <form action="/-/upload-dbs" id="file-form" method="post" enctype="multipart/form-data">
 <div id="file-drop">
   <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">

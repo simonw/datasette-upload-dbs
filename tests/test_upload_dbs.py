@@ -1,6 +1,7 @@
 from datasette.app import Datasette
 import sqlite3
 import pytest
+from io import BytesIO
 
 
 @pytest.mark.asyncio
@@ -68,3 +69,46 @@ async def test_errors(authed, configured, expected_error):
     response = await ds.client.get("/-/upload-dbs", cookies=cookies)
     assert response.status_code == 403
     assert expected_error in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bytes,expected_error",
+    (
+        (b"bad_bytes", "File is not a valid SQLite database (invalid header)"),
+        (
+            b"SQLite format 3\x00invalid",
+            "File is not a valid SQLite database (file is not a database)",
+        ),
+    ),
+)
+@pytest.mark.parametrize("xhr", (True, False))
+async def test_invalid_files(tmp_path_factory, bytes, expected_error, xhr):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    ds = Datasette(
+        memory=True,
+        metadata={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    # Get csrftoken
+    csrftoken = (
+        await ds.client.get(
+            "/-/upload-dbs",
+            cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        )
+    ).cookies["ds_csrftoken"]
+    # write to database
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies={
+            "ds_actor": ds.sign({"a": {"id": "root"}}, "actor"),
+            "ds_csrftoken": csrftoken,
+        },
+        data={"csrftoken": csrftoken, "xhr": "1" if xhr else ""},
+        files={"db": BytesIO(bytes)},
+    )
+    if xhr:
+        assert response.json() == {"ok": False, "error": expected_error}
+    else:
+        assert f'<p class="message-error">{expected_error}</p>' in response.text
