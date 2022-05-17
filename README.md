@@ -58,7 +58,7 @@ If a user has that permission they will see an "Upload database" link in the nav
 
 This will take them to `/-/upload-dbs` where they will be able to upload database files, by selecting them or by dragging them onto the drop area.
 
-![Animated demo showing a file being dropped onto a box, then uploading and redirecting to the database page](upload-demo.gif)
+![Animated demo showing a file being dropped onto a box, then uploading and redirecting to the database page](https://github.com/simonw/datasette-upload-dbs/raw/main/upload-demo.gif)
 
 ## Development
 
