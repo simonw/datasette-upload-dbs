@@ -26,3 +26,11 @@ async def test_menu(auth):
         assert "/-/upload-dbs" in response.text
     else:
         assert "/-/upload-dbs" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_redirect():
+    ds = Datasette(memory=True)
+    response = await ds.client.get("/-/upload-db")
+    assert response.status_code == 302
+    assert response.headers["location"] == "/-/upload-dbs"
