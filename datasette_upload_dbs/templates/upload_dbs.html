@@ -60,8 +60,8 @@ progress::-webkit-progress-value {
 <p style="margin-top: 1em"><label for="id_db_name">Name:</label> <input type="text" id="id_db_name" name="db_name" size="20"></label></p>
 <p><input type="submit" value="Upload database"></p>
 <p style="margin-bottom: -0.8em;font-size: 0.8em; display: none;" id="progress-label">Uploading...</p>
-<progress class="progress" value="0" max="100">Uploading...</progress>
 </form>
+<progress class="progress" value="0" max="100">Uploading...</progress>
 </div>
 
 <script>
@@ -137,7 +137,8 @@ function setFile(file) {
 function doUpload() {
   var xhr = new XMLHttpRequest();
   var formData = new FormData();
-  dropArea.style.display = "none";
+  fileForm.style.display = "none";
+  nameInput.closest("p").style.display = "none";
   progressLabel.style.display = "block";
   xhr.open("POST", fileInput.form.action, true);
 
@@ -153,12 +154,17 @@ function doUpload() {
         const data = JSON.parse(xhr.responseText);
         if (data.ok) {
           window.location = data.redirect;
+        } else {
+          alert(data.error);
+          window.location.href = window.location.href;
         }
       } else {
         alert(xhr.responseText);
+        window.location.href = window.location.href;
       }
     } else if (xhr.readyState == 4 && xhr.status != 200) {
       alert("Error!");
+      window.location.href = window.location.href;
     }
   });
   formData.append("xhr", "1");
