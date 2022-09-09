@@ -47,7 +47,9 @@ def startup(datasette):
     path = pathlib.Path(directory)
     database_files = path.glob("*.db")
     for file_path in database_files:
-        datasette.add_database(Database(datasette, path=str(file_path)))
+        datasette.add_database(
+            Database(datasette, path=str(file_path), is_mutable=True),
+        )
 
 
 def _configured(datasette):
@@ -121,7 +123,7 @@ async def upload_dbs(scope, receive, datasette, request):
         return await error(f"File is not a valid SQLite database ({e})")
 
     # File is valid - add it to this Datasette instance
-    db = Database(datasette, path=str(filepath))
+    db = Database(datasette, path=str(filepath), is_mutable=True)
     datasette.add_database(db)
 
     redirect_url = datasette.urls.database(db.name)

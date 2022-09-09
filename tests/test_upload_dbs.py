@@ -42,7 +42,10 @@ async def test_databases_loaded_on_startup(tmp_path_factory):
         },
     )
     await ds.invoke_startup()
-    assert set(ds.databases.keys()).issuperset({"test1", "test2"})
+    db_names = {"test1", "test2"}
+    assert set(ds.databases.keys()).issuperset(db_names)
+    for name in db_names:
+        assert ds.databases[name].is_mutable
 
 
 @pytest.mark.asyncio
@@ -162,6 +165,9 @@ async def test_upload(tmp_path_factory, xhr, db_file_name, db_name, expected_pat
     assert conn.execute("select sql from sqlite_master").fetchall() == [
         ("CREATE TABLE t (id integer primary key)",)
     ]
+    # And it should be mutable
+    new_db = [db for db in ds.databases.values() if not db.name.startswith("_")][0]
+    assert new_db.is_mutable
 
 
 async def _get_csrftoken(ds):
