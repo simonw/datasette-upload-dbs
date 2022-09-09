@@ -47,6 +47,8 @@ def startup(datasette):
     path = pathlib.Path(directory)
     database_files = path.glob("*.db")
     for file_path in database_files:
+        # Needs to set is_mutable=True here because the default was False
+        # in Datasette versions up to and including 0.62
         datasette.add_database(
             Database(datasette, path=str(file_path), is_mutable=True),
         )
