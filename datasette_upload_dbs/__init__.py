@@ -41,7 +41,10 @@ def menu_links(datasette, actor):
 @hookimpl
 def startup(datasette):
     # Load any databases located in the directory folder
-    directory = _configured(datasette)
+    config = datasette.plugin_config("datasette-upload-dbs") or {}
+    if config.get("skip_startup_scan"):
+        return
+    directory = config.get("directory")
     if not directory:
         return
     path = pathlib.Path(directory)

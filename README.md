@@ -44,6 +44,12 @@ Then start Datasette like this:
 
     datasette -m metadata.yml
 
+The plugin defaults to loading all databases in the configured directory.
+
+You can disable this by adding the following setting:
+```
+"skip_startup_scan": true
+```
 ## Usage
 
 Only users with the `upload-dbs` permission will be able to upload files. The `root` user has this permission by default - other users can be granted access using permission plugins, see the [Permissions](https://docs.datasette.io/en/stable/authentication.html#permissions) documentation for details.

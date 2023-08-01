@@ -30,22 +30,29 @@ async def test_redirect():
 
 
 @pytest.mark.asyncio
-async def test_databases_loaded_on_startup(tmp_path_factory):
+@pytest.mark.parametrize("skip_startup_scan", (False, True))
+async def test_databases_loaded_on_startup(tmp_path_factory, skip_startup_scan):
     uploads_directory = tmp_path_factory.mktemp("uploads")
     for name in ("test1.db", "test2.db"):
         db_path = uploads_directory / name
         sqlite3.connect(str(db_path)).execute("create table t (id integer primary key)")
+    config = {"directory": str(uploads_directory)}
+    if skip_startup_scan:
+        config["skip_startup_scan"] = True
+
     ds = Datasette(
         memory=True,
-        metadata={
-            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
-        },
+        metadata={"plugins": {"datasette-upload-dbs": config}},
     )
     await ds.invoke_startup()
     db_names = {"test1", "test2"}
-    assert set(ds.databases.keys()).issuperset(db_names)
-    for name in db_names:
-        assert ds.databases[name].is_mutable
+    if skip_startup_scan:
+        # Should not have any DBs
+        assert set(ds.databases.keys()) == {"_internal", "_memory"}
+    else:
+        assert set(ds.databases.keys()).issuperset(db_names)
+        for name in db_names:
+            assert ds.databases[name].is_mutable
 
 
 @pytest.mark.asyncio
