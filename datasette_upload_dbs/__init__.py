@@ -1,4 +1,4 @@
-from datasette import hookimpl
+from datasette import hookimpl, Permission
 from datasette.database import Database
 from datasette.utils.asgi import Response, Forbidden
 from datasette.utils import to_css_class
@@ -7,6 +7,19 @@ from starlette.requests import Request
 from shutil import copyfileobj
 import pathlib
 
+
+@hookimpl
+def register_permissions(datasette):
+    return [
+        Permission(
+            name="upload-dbs",
+            abbr=None,
+            description="Upload SQLite database files",
+            takes_database=False,
+            takes_resource=False,
+            default=False,
+        )
+    ]
 
 @hookimpl
 def permission_allowed(actor, action):
