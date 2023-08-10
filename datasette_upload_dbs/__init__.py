@@ -9,6 +9,23 @@ import pathlib
 
 
 @hookimpl
+def register_permissions(datasette):
+    # Only runs on 1.0a2 or higher
+    from datasette import Permission
+
+    return [
+        Permission(
+            name="upload-dbs",
+            abbr=None,
+            description="Upload SQLite database files",
+            takes_database=False,
+            takes_resource=False,
+            default=False,
+        )
+    ]
+
+
+@hookimpl
 def permission_allowed(actor, action):
     if action == "upload-dbs" and actor and actor.get("id") == "root":
         return True
