@@ -1,4 +1,4 @@
-from datasette import hookimpl, Permission
+from datasette import hookimpl
 from datasette.database import Database
 from datasette.utils.asgi import Response, Forbidden
 from datasette.utils import to_css_class
@@ -10,6 +10,9 @@ import pathlib
 
 @hookimpl
 def register_permissions(datasette):
+    # Only runs on 1.0a2 or higher
+    from datasette import Permission
+
     return [
         Permission(
             name="upload-dbs",
@@ -20,6 +23,7 @@ def register_permissions(datasette):
             default=False,
         )
     ]
+
 
 @hookimpl
 def permission_allowed(actor, action):
