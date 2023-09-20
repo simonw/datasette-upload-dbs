@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Upload a database{% endblock %}
+{% block title %}Upload a SQLite database{% endblock %}
 
 {% block extra_head %}
 <style type="text/css">
@@ -45,7 +45,7 @@ progress::-webkit-progress-value {
 {% endblock %}
 
 {% block content %}
-<h1>Upload a database</h1>
+<h1>Upload a SQLite database</h1>
 
 {% if error %}
   <p class="message-error">{{ error }}</p>
@@ -62,7 +62,9 @@ progress::-webkit-progress-value {
 <p style="margin-bottom: -0.8em;font-size: 0.8em; display: none;" id="progress-label">Uploading...</p>
 </form>
 <progress class="progress" value="0" max="100">Uploading...</progress>
-</div>
+
+<p>SQLite database files can by created using a range of different tools, including the <a href="https://sqlite-utils.datasette.io/">sqlite-utils</a> Python library and command-line utility.</p>
+</ul>
 
 <script>
 const fileForm = document.getElementById("file-form");
