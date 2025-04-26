@@ -58,7 +58,7 @@ To start Datasette as the root user, run this:
 
     datasette -m metadata.yml --root
 
-And follow the link that is displayd on the console.
+And follow the link that is displayed on the console.
 
 If a user has that permission they will see an "Upload database" link in the navigation menu.
 
