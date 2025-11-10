@@ -32,8 +32,8 @@ setup(
     version=VERSION,
     packages=["datasette_upload_dbs"],
     entry_points={"datasette": ["upload_dbs = datasette_upload_dbs"]},
-    install_requires=["datasette", "starlette"],
+    install_requires=["datasette>=1.0a21", "starlette"],
     extras_require={"test": ["pytest", "pytest-asyncio"]},
     package_data={"datasette_upload_dbs": ["templates/*"]},
-    python_requires=">=3.7",
+    python_requires=">=3.10",
 )
