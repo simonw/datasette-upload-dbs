@@ -8,8 +8,10 @@ from io import BytesIO
 @pytest.mark.parametrize("auth", [True, False])
 async def test_menu(auth):
     ds = Datasette(
-        memory=True, metadata={"plugins": {"datasette-upload-dbs": {"directory": "."}}}
+        memory=True,
+        config={"plugins": {"datasette-upload-dbs": {"directory": "."}}},
     )
+    ds.root_enabled = True
     cookies = {}
     if auth:
         cookies = {"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")}
@@ -42,13 +44,13 @@ async def test_databases_loaded_on_startup(tmp_path_factory, skip_startup_scan):
 
     ds = Datasette(
         memory=True,
-        metadata={"plugins": {"datasette-upload-dbs": config}},
+        config={"plugins": {"datasette-upload-dbs": config}},
     )
     await ds.invoke_startup()
     db_names = {"test1", "test2"}
     if skip_startup_scan:
-        # Should not have any DBs
-        assert set(ds.databases.keys()) == {"_internal", "_memory"}
+        # Startup scan skipped, so none of the uploaded DBs should be loaded
+        assert db_names.isdisjoint(ds.databases.keys())
     else:
         assert set(ds.databases.keys()).issuperset(db_names)
         for name in db_names:
@@ -67,12 +69,13 @@ async def test_databases_loaded_on_startup(tmp_path_factory, skip_startup_scan):
 async def test_errors(authed, configured, expected_error):
     ds = Datasette(
         memory=True,
-        metadata={
-            "plugins": {"datasette-upload-dbs": {"directory": "."}}
-            if configured
-            else {}
+        config={
+            "plugins": (
+                {"datasette-upload-dbs": {"directory": "."}} if configured else {}
+            )
         },
     )
+    ds.root_enabled = True
     cookies = {}
     if authed:
         cookies = {"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")}
@@ -97,10 +100,11 @@ async def test_invalid_files(tmp_path_factory, bytes, expected_error, xhr):
     uploads_directory = tmp_path_factory.mktemp("uploads")
     ds = Datasette(
         memory=True,
-        metadata={
+        config={
             "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
         },
     )
+    ds.root_enabled = True
     csrftoken = await _get_csrftoken(ds)
     # write to database
     response = await ds.client.post(
@@ -134,10 +138,11 @@ async def test_upload(tmp_path_factory, xhr, db_file_name, db_name, expected_pat
     tmp_directory = tmp_path_factory.mktemp("tmp")
     ds = Datasette(
         memory=True,
-        metadata={
+        config={
             "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
         },
     )
+    ds.root_enabled = True
     csrftoken = await _get_csrftoken(ds)
 
     temp = str(tmp_directory / db_file_name)

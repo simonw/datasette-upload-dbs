@@ -1,4 +1,5 @@
 from datasette import hookimpl
+from datasette.permissions import Action
 from datasette.database import Database
 from datasette.utils.asgi import Response, Forbidden
 from datasette.utils import to_css_class
@@ -9,26 +10,13 @@ import pathlib
 
 
 @hookimpl
-def register_permissions(datasette):
-    # Only runs on 1.0a2 or higher
-    from datasette import Permission
-
+def register_actions(datasette):
     return [
-        Permission(
+        Action(
             name="upload-dbs",
-            abbr=None,
             description="Upload SQLite database files",
-            takes_database=False,
-            takes_resource=False,
-            default=False,
         )
     ]
-
-
-@hookimpl
-def permission_allowed(actor, action):
-    if action == "upload-dbs" and actor and actor.get("id") == "root":
-        return True
 
 
 @hookimpl
@@ -42,8 +30,9 @@ def register_routes():
 @hookimpl
 def menu_links(datasette, actor):
     async def inner():
-        if await datasette.permission_allowed(
-            actor, "upload-dbs", default=False
+        if await datasette.allowed(
+            actor=actor,
+            action="upload-dbs",
         ) and _configured(datasette):
             return [
                 {
@@ -79,8 +68,9 @@ def _configured(datasette):
 
 
 async def upload_dbs(scope, receive, datasette, request):
-    if not await datasette.permission_allowed(
-        request.actor, "upload-dbs", default=False
+    if not await datasette.allowed(
+        actor=request.actor,
+        action="upload-dbs",
     ):
         raise Forbidden("Permission denied for upload-dbs")
 
