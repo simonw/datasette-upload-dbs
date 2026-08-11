@@ -91,11 +91,11 @@ async def upload_dbs(datasette, request):
             await datasette.render_template("upload_dbs.html", request=request)
         )
 
-    is_xhr = False
+    return_json = "application/json" in (request.headers.get("accept") or "")
 
-    async def error(msg):
-        if is_xhr:
-            return Response.json({"ok": False, "error": msg})
+    async def error(msg, status=400):
+        if return_json:
+            return Response.json({"ok": False, "error": msg}, status=status)
 
         return Response.html(
             await datasette.render_template(
@@ -104,7 +104,8 @@ async def upload_dbs(datasette, request):
                     "error": msg,
                 },
                 request=request,
-            )
+            ),
+            status=status,
         )
 
     max_file_size_mb = config.get("max_file_size_mb")
@@ -122,11 +123,15 @@ async def upload_dbs(datasette, request):
             max_request_size=max_request_size,
         )
     except BadRequest as e:
-        return await error(str(e))
+        msg = str(e)
+        return await error(msg, status=413 if "too large" in msg else 400)
 
     async with formdata:
-        db_file = formdata["db"]
-        is_xhr = formdata.get("xhr")
+        if formdata.get("xhr"):
+            return_json = True
+        db_file = formdata.get("db")
+        if db_file is None or isinstance(db_file, str):
+            return await error('No file was uploaded in the "db" field')
         db_name = (formdata.get("db_name") or "").strip()
 
         if not db_name:
@@ -164,7 +169,9 @@ async def upload_dbs(datasette, request):
     datasette.add_database(db)
 
     redirect_url = datasette.urls.database(db.name)
-    if is_xhr:
-        return Response.json({"ok": True, "redirect": redirect_url})
+    if return_json:
+        return Response.json(
+            {"ok": True, "database": db.name, "redirect": redirect_url}
+        )
     else:
         return Response.redirect(redirect_url)

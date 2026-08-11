@@ -151,20 +151,21 @@ function doUpload() {
   progress.style.display = "block";
 
   xhr.addEventListener("readystatechange", function(e) {
-    if (xhr.readyState == 4 && xhr.status == 200) {
-      if (/application\/json/.exec(xhr.getResponseHeader('content-type'))) {
-        const data = JSON.parse(xhr.responseText);
-        if (data.ok) {
-          window.location = data.redirect;
-        } else {
-          alert(data.error);
-          window.location.href = window.location.href;
-        }
+    if (xhr.readyState != 4) {
+      return;
+    }
+    if (/application\/json/.exec(xhr.getResponseHeader('content-type'))) {
+      const data = JSON.parse(xhr.responseText);
+      if (data.ok) {
+        window.location = data.redirect;
       } else {
-        alert(xhr.responseText);
+        alert(data.error);
         window.location.href = window.location.href;
       }
-    } else if (xhr.readyState == 4 && xhr.status != 200) {
+    } else if (xhr.status == 200) {
+      alert(xhr.responseText);
+      window.location.href = window.location.href;
+    } else {
       alert("Error!");
       window.location.href = window.location.href;
     }
