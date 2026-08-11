@@ -111,7 +111,7 @@ A successful upload returns a `200` status with the name Datasette assigned to t
 }
 ```
 
-Uploading a file with the same name as an existing database will replace that database.
+Uploading a file with the same name as an existing database will replace that database. Uploads are written to a temporary file and validated before being atomically moved into place, so a failed or invalid upload will never damage the existing database.
 
 Errors return `{"ok": false, "error": "..."}` with an appropriate status code:
 

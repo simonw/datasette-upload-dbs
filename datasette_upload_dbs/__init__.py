@@ -145,10 +145,12 @@ async def upload_dbs(datasette, request):
 
         path.mkdir(parents=True, exist_ok=True)
 
-        # Copy it to its final destination
+        # Copy it to a temporary file next to its final destination, so an
+        # invalid upload can never damage an existing database
         filepath = path / (db_name + ".db")
+        tmp_filepath = path / (db_name + ".db.tmp")
         await db_file.seek(0)
-        with open(filepath, "wb") as target_file:
+        with open(tmp_filepath, "wb") as target_file:
             while True:
                 chunk = await db_file.read(COPY_CHUNK_SIZE)
                 if not chunk:
@@ -156,15 +158,34 @@ async def upload_dbs(datasette, request):
                 target_file.write(chunk)
 
     # Now really verify it
-    conn = sqlite3.connect(str(filepath))
+    conn = sqlite3.connect(str(tmp_filepath))
     try:
         conn.execute("select * from sqlite_master")
     except sqlite3.Error as e:
-        # Delete file, it is invalid
-        filepath.unlink()
+        tmp_filepath.unlink()
         return await error(f"File is not a valid SQLite database ({e})")
+    finally:
+        conn.close()
 
-    # File is valid - add it to this Datasette instance
+    # File is valid - if it replaces an existing database, remove that
+    # from the Datasette instance first, closing its connections
+    resolved = filepath.resolve()
+    existing_names = [
+        name
+        for name, existing_db in datasette.databases.items()
+        if existing_db.path and pathlib.Path(existing_db.path).resolve() == resolved
+    ]
+    for name in existing_names:
+        datasette.remove_database(name)
+
+    # Remove any stale WAL files belonging to the previous database, then
+    # atomically move the new database into place
+    for suffix in ("-wal", "-shm"):
+        stale = pathlib.Path(str(filepath) + suffix)
+        if stale.exists():
+            stale.unlink()
+    tmp_filepath.replace(filepath)
+
     db = Database(datasette, path=str(filepath), is_mutable=True)
     datasette.add_database(db)
 
