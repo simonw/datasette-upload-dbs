@@ -1,7 +1,14 @@
 from datasette.app import Datasette
+from datasette.tokens import TokenRestrictions
 import sqlite3
 import pytest
 from io import BytesIO
+
+
+def _create_test_db(directory, name="temp.db"):
+    path = str(directory / name)
+    sqlite3.connect(path).execute("create table t (id integer primary key)")
+    return path
 
 
 @pytest.mark.asyncio
@@ -105,17 +112,14 @@ async def test_invalid_files(tmp_path_factory, bytes, expected_error, xhr):
         },
     )
     ds.root_enabled = True
-    csrftoken = await _get_csrftoken(ds)
     # write to database
     response = await ds.client.post(
         "/-/upload-dbs",
-        cookies={
-            "ds_actor": ds.sign({"a": {"id": "root"}}, "actor"),
-            "ds_csrftoken": csrftoken,
-        },
-        data={"csrftoken": csrftoken, "xhr": "1" if xhr else ""},
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        data={"xhr": "1" if xhr else ""},
         files={"db": BytesIO(bytes)},
     )
+    assert response.status_code == 400
     if xhr:
         assert response.json() == {"ok": False, "error": expected_error}
     else:
@@ -143,26 +147,26 @@ async def test_upload(tmp_path_factory, xhr, db_file_name, db_name, expected_pat
         },
     )
     ds.root_enabled = True
-    csrftoken = await _get_csrftoken(ds)
 
     temp = str(tmp_directory / db_file_name)
     sqlite3.connect(temp).execute("create table t (id integer primary key)")
 
-    upload_data = {"csrftoken": csrftoken, "xhr": "1" if xhr else ""}
+    upload_data = {"xhr": "1" if xhr else ""}
     if db_name:
         upload_data["db_name"] = db_name
 
     response = await ds.client.post(
         "/-/upload-dbs",
-        cookies={
-            "ds_actor": ds.sign({"a": {"id": "root"}}, "actor"),
-            "ds_csrftoken": csrftoken,
-        },
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
         data=upload_data,
         files={"db": open(temp, "rb")},
     )
     if xhr:
-        assert response.json() == {"ok": True, "redirect": expected_path}
+        assert response.json() == {
+            "ok": True,
+            "database": expected_path.lstrip("/"),
+            "redirect": expected_path,
+        }
     else:
         assert response.status_code == 302
         assert response.headers["location"] == expected_path
@@ -182,10 +186,304 @@ async def test_upload(tmp_path_factory, xhr, db_file_name, db_name, expected_pat
     assert new_db.is_mutable
 
 
-async def _get_csrftoken(ds):
-    return (
-        await ds.client.get(
-            "/-/upload-dbs",
-            cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+@pytest.mark.asyncio
+@pytest.mark.parametrize("over_limit", (True, False))
+async def test_max_file_size_mb(tmp_path_factory, over_limit):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {
+                "datasette-upload-dbs": {
+                    "directory": str(uploads_directory),
+                    "max_file_size_mb": 1,
+                }
+            }
+        },
+    )
+    ds.root_enabled = True
+
+    temp = str(tmp_directory / "sized.db")
+    conn = sqlite3.connect(temp)
+    conn.execute("create table t (id integer primary key, blob blob)")
+    if over_limit:
+        # Grow the database beyond 1MB
+        conn.execute(
+            "insert into t (blob) values (zeroblob(?))", (2 * 1024 * 1024,)
         )
-    ).cookies["ds_csrftoken"]
+        conn.commit()
+    conn.close()
+
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        files={"db": open(temp, "rb")},
+    )
+    if over_limit:
+        assert response.status_code == 413
+        assert '<p class="message-error">File too large</p>' in response.text
+        assert not (uploads_directory / "sized.db").exists()
+    else:
+        assert response.status_code == 302
+        assert response.headers["location"] == "/sized"
+
+
+@pytest.mark.asyncio
+async def test_api_upload_with_bearer_token(tmp_path_factory):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    ds.root_enabled = True
+    await ds.invoke_startup()
+    token = await ds.create_token(
+        "root", restrictions=TokenRestrictions().allow_all("upload-dbs")
+    )
+    temp = _create_test_db(tmp_directory)
+
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        headers={
+            "Authorization": "Bearer {}".format(token),
+            "Accept": "application/json",
+        },
+        data={"db_name": "api-created"},
+        files={"db": open(temp, "rb")},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "database": "api-created",
+        "redirect": "/api-created",
+    }
+    assert (uploads_directory / "api-created.db").exists()
+
+    table_response = await ds.client.get("/api-created/t.json?_shape=array")
+    assert table_response.status_code == 200
+    assert table_response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_api_upload_token_without_permission(tmp_path_factory):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    ds.root_enabled = True
+    await ds.invoke_startup()
+    token = await ds.create_token(
+        "root", restrictions=TokenRestrictions().allow_all("view-instance")
+    )
+    temp = _create_test_db(tmp_directory)
+
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        headers={
+            "Authorization": "Bearer {}".format(token),
+            "Accept": "application/json",
+        },
+        files={"db": open(temp, "rb")},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_api_error_json_with_accept_header(tmp_path_factory):
+    # Accept: application/json should return JSON errors without the xhr field
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    ds.root_enabled = True
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        headers={"Accept": "application/json"},
+        files={"db": BytesIO(b"bad_bytes")},
+    )
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error": "File is not a valid SQLite database (invalid header)",
+    }
+
+
+@pytest.mark.asyncio
+async def test_api_missing_db_field(tmp_path_factory):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    ds.root_enabled = True
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        headers={"Accept": "application/json"},
+        data={"db_name": "example"},
+    )
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error": 'No file was uploaded in the "db" field',
+    }
+
+
+@pytest.mark.asyncio
+async def test_api_file_too_large_returns_413_json(tmp_path_factory):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {
+                "datasette-upload-dbs": {
+                    "directory": str(uploads_directory),
+                    "max_file_size_mb": 1,
+                }
+            }
+        },
+    )
+    ds.root_enabled = True
+    temp = str(tmp_directory / "big.db")
+    conn = sqlite3.connect(temp)
+    conn.execute("create table t (id integer primary key, blob blob)")
+    conn.execute("insert into t (blob) values (zeroblob(?))", (2 * 1024 * 1024,))
+    conn.commit()
+    conn.close()
+
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        headers={"Accept": "application/json"},
+        files={"db": open(temp, "rb")},
+    )
+    assert response.status_code == 413
+    assert response.json() == {"ok": False, "error": "File too large"}
+
+
+@pytest.mark.asyncio
+async def test_replace_existing_database(tmp_path_factory):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    ds.root_enabled = True
+    cookies = {"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")}
+
+    first = str(tmp_directory / "first.db")
+    sqlite3.connect(first).execute("create table t (id integer primary key)")
+    second = str(tmp_directory / "second.db")
+    conn = sqlite3.connect(second)
+    conn.execute("create table t2 (id integer primary key)")
+    conn.execute("insert into t2 (id) values (1)")
+    conn.commit()
+    conn.close()
+
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies=cookies,
+        headers={"Accept": "application/json"},
+        data={"db_name": "temp"},
+        files={"db": open(first, "rb")},
+    )
+    assert response.status_code == 200
+
+    # Query it to open some connections against the original file
+    assert (await ds.client.get("/temp/t.json?_shape=array")).status_code == 200
+
+    # Now replace it with the second database, under the same name
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies=cookies,
+        headers={"Accept": "application/json"},
+        data={"db_name": "temp"},
+        files={"db": open(second, "rb")},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "database": "temp", "redirect": "/temp"}
+
+    # The replacement should not have registered a deduplicated temp_2 database
+    assert "temp_2" not in ds.databases
+
+    # The new content should be served under the same name
+    table_response = await ds.client.get("/temp/t2.json?_shape=array")
+    assert table_response.status_code == 200
+    assert table_response.json() == [{"id": 1}]
+    assert (await ds.client.get("/temp/t.json?_shape=array")).status_code == 404
+
+    # No temporary files left behind
+    assert [p.name for p in uploads_directory.glob("*")] == ["temp.db"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_upload_leaves_existing_database_intact(tmp_path_factory):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {"datasette-upload-dbs": {"directory": str(uploads_directory)}}
+        },
+    )
+    ds.root_enabled = True
+    cookies = {"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")}
+
+    temp = _create_test_db(tmp_directory)
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies=cookies,
+        headers={"Accept": "application/json"},
+        data={"db_name": "temp"},
+        files={"db": open(temp, "rb")},
+    )
+    assert response.status_code == 200
+
+    # Now upload a corrupt file - valid 16 byte header, invalid contents -
+    # over the same name
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies=cookies,
+        headers={"Accept": "application/json"},
+        data={"db_name": "temp"},
+        files={"db": BytesIO(b"SQLite format 3\x00" + b"garbage" * 100)},
+    )
+    assert response.status_code == 400
+    assert not response.json()["ok"]
+
+    # The existing database file must be untouched, still registered and queryable
+    assert (uploads_directory / "temp.db").exists()
+    assert "temp" in ds.databases
+    table_response = await ds.client.get("/temp/t.json?_shape=array")
+    assert table_response.status_code == 200
+    assert table_response.json() == []
+
+    # No temporary files left behind
+    assert [p.name for p in uploads_directory.glob("*")] == ["temp.db"]
+
+
+@pytest.mark.asyncio
+async def test_starlette_not_required():
+    import datasette_upload_dbs
+    import inspect
+
+    source = inspect.getsource(datasette_upload_dbs)
+    assert "starlette" not in source
