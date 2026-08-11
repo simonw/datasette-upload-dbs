@@ -105,15 +105,11 @@ async def test_invalid_files(tmp_path_factory, bytes, expected_error, xhr):
         },
     )
     ds.root_enabled = True
-    csrftoken = await _get_csrftoken(ds)
     # write to database
     response = await ds.client.post(
         "/-/upload-dbs",
-        cookies={
-            "ds_actor": ds.sign({"a": {"id": "root"}}, "actor"),
-            "ds_csrftoken": csrftoken,
-        },
-        data={"csrftoken": csrftoken, "xhr": "1" if xhr else ""},
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        data={"xhr": "1" if xhr else ""},
         files={"db": BytesIO(bytes)},
     )
     if xhr:
@@ -143,21 +139,17 @@ async def test_upload(tmp_path_factory, xhr, db_file_name, db_name, expected_pat
         },
     )
     ds.root_enabled = True
-    csrftoken = await _get_csrftoken(ds)
 
     temp = str(tmp_directory / db_file_name)
     sqlite3.connect(temp).execute("create table t (id integer primary key)")
 
-    upload_data = {"csrftoken": csrftoken, "xhr": "1" if xhr else ""}
+    upload_data = {"xhr": "1" if xhr else ""}
     if db_name:
         upload_data["db_name"] = db_name
 
     response = await ds.client.post(
         "/-/upload-dbs",
-        cookies={
-            "ds_actor": ds.sign({"a": {"id": "root"}}, "actor"),
-            "ds_csrftoken": csrftoken,
-        },
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
         data=upload_data,
         files={"db": open(temp, "rb")},
     )
@@ -182,10 +174,52 @@ async def test_upload(tmp_path_factory, xhr, db_file_name, db_name, expected_pat
     assert new_db.is_mutable
 
 
-async def _get_csrftoken(ds):
-    return (
-        await ds.client.get(
-            "/-/upload-dbs",
-            cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+@pytest.mark.asyncio
+@pytest.mark.parametrize("over_limit", (True, False))
+async def test_max_file_size_mb(tmp_path_factory, over_limit):
+    uploads_directory = tmp_path_factory.mktemp("uploads")
+    tmp_directory = tmp_path_factory.mktemp("tmp")
+    ds = Datasette(
+        memory=True,
+        config={
+            "plugins": {
+                "datasette-upload-dbs": {
+                    "directory": str(uploads_directory),
+                    "max_file_size_mb": 1,
+                }
+            }
+        },
+    )
+    ds.root_enabled = True
+
+    temp = str(tmp_directory / "sized.db")
+    conn = sqlite3.connect(temp)
+    conn.execute("create table t (id integer primary key, blob blob)")
+    if over_limit:
+        # Grow the database beyond 1MB
+        conn.execute(
+            "insert into t (blob) values (zeroblob(?))", (2 * 1024 * 1024,)
         )
-    ).cookies["ds_csrftoken"]
+        conn.commit()
+    conn.close()
+
+    response = await ds.client.post(
+        "/-/upload-dbs",
+        cookies={"ds_actor": ds.sign({"a": {"id": "root"}}, "actor")},
+        files={"db": open(temp, "rb")},
+    )
+    if over_limit:
+        assert '<p class="message-error">File too large</p>' in response.text
+        assert not (uploads_directory / "sized.db").exists()
+    else:
+        assert response.status_code == 302
+        assert response.headers["location"] == "/sized"
+
+
+@pytest.mark.asyncio
+async def test_starlette_not_required():
+    import datasette_upload_dbs
+    import inspect
+
+    source = inspect.getsource(datasette_upload_dbs)
+    assert "starlette" not in source

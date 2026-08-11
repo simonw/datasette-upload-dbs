@@ -54,7 +54,6 @@ progress::-webkit-progress-value {
 
 <form action="/-/upload-dbs" id="file-form" method="post" enctype="multipart/form-data">
 <div id="file-drop">
-  <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
   <input type="file" name="db" id="dbUpload">
   <label for="dbUpload">Select a file to upload or drag and drop one here</label>
 </div>
@@ -171,7 +170,6 @@ function doUpload() {
     }
   });
   formData.append("xhr", "1");
-  formData.append("csrftoken", "{{ csrftoken() }}");
   formData.append("db", fileInput.file);
   xhr.send(formData);
 }
