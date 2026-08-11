@@ -1,6 +1,6 @@
 [project]
 name = "datasette-upload-dbs"
-version = "0.4a0"
+version = "0.5a0"
 description = "Upload SQLite database files to Datasette"
 readme = "README.md"
 authors = [{name = "Simon Willison"}]
